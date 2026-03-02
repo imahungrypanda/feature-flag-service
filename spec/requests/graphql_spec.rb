@@ -3,16 +3,33 @@
 require "rails_helper"
 
 RSpec.describe "GraphQL API", type: :request do
-  def graphql_query(query, variables: {})
-    post "/graphql", params: { query: query, variables: variables }, as: :json
+  let(:valid_token) { "test-token" }
+  let(:invalid_token) { "bad-token" }
+
+  def graphql_query(query, variables: {}, token: valid_token)
+    headers = {}
+    headers["Authorization"] = "Bearer #{token}" if token
+    post "/graphql", params: { query: query, variables: variables }, headers: headers, as: :json
   end
 
-  describe "query: testField" do
-    it "returns Hello World!" do
-      graphql_query("{ testField }")
+  describe "authentication" do
+    let(:query) { "{ flag(key: \"nonexistent\") { key } }" }
+
+    it "rejects requests without a token" do
+      graphql_query(query, token: nil)
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body["errors"].first["message"]).to eq("Unauthorized")
+    end
+
+    it "rejects requests with an invalid token" do
+      graphql_query(query, token: invalid_token)
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body["errors"].first["message"]).to eq("Unauthorized")
+    end
+
+    it "allows requests with the valid token" do
+      graphql_query(query)
       expect(response).to have_http_status(:ok)
-      json = response.parsed_body
-      expect(json["data"]["testField"]).to eq("Hello World!")
     end
   end
 
@@ -32,9 +49,9 @@ RSpec.describe "GraphQL API", type: :request do
       GQL
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]["flag"]
-      expect(data["key"]).to eq("my_flag")
+      expect(data["key"]).to eq(flag.key)
       expect(data["enabled"]).to be true
-      expect(data["description"]).to eq("A test flag")
+      expect(data["description"]).to eq(flag.description)
       expect(data["id"]).to be_present
     end
   end
@@ -53,20 +70,21 @@ RSpec.describe "GraphQL API", type: :request do
     it "returns enabled state and flag_not_found: false when flag exists" do
       Flag.create!(key: "on_flag", enabled: true)
       Flag.create!(key: "off_flag", enabled: false)
+
       graphql_query(<<~GQL)
         query { evaluateFlag(key: "on_flag") { enabled flagNotFound } }
       GQL
       expect(response).to have_http_status(:ok)
-      data = response.parsed_body["data"]["evaluateFlag"]
-      expect(data["enabled"]).to be true
-      expect(data["flagNotFound"]).to be false
+      on_data = response.parsed_body["data"]["evaluateFlag"]
+      expect(on_data["enabled"]).to be true
+      expect(on_data["flagNotFound"]).to be false
 
       graphql_query(<<~GQL)
         query { evaluateFlag(key: "off_flag") { enabled flagNotFound } }
       GQL
-      data = response.parsed_body["data"]["evaluateFlag"]
-      expect(data["enabled"]).to be false
-      expect(data["flagNotFound"]).to be false
+      off_data = response.parsed_body["data"]["evaluateFlag"]
+      expect(off_data["enabled"]).to be false
+      expect(off_data["flagNotFound"]).to be false
     end
   end
 
