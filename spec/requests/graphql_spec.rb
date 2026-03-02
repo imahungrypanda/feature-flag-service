@@ -6,12 +6,6 @@ RSpec.describe "GraphQL API", type: :request do
   let(:valid_token) { "test-token" }
   let(:invalid_token) { "bad-token" }
 
-  def graphql_query(query, variables: {}, token: valid_token)
-    headers = {}
-    headers["Authorization"] = "Bearer #{token}" if token
-    post "/graphql", params: { query: query, variables: variables }, headers: headers, as: :json
-  end
-
   describe "authentication" do
     let(:query) { "{ flag(key: \"nonexistent\") { key } }" }
 
